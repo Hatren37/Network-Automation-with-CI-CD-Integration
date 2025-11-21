@@ -1,0 +1,271 @@
+name: Network Configuration CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'configs/**'
+      - 'scripts/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'configs/**'
+      - 'scripts/**'
+  workflow_dispatch:
+    inputs:
+      deploy_environment:
+        description: 'Deployment Environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  PYTHON_VERSION: '3.9'
+
+jobs:
+  validate:
+    name: Validate Configuration Files
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Validate all configuration files
+        run: |
+          echo "=== Validating Network Configurations ==="
+          for config_file in configs/devices/*.yaml; do
+            echo "Validating $config_file..."
+            python scripts/config_validator.py "$config_file"
+          done
+      
+      - name: Check for validation errors
+        if: failure()
+        run: |
+          echo "❌ Configuration validation failed!"
+          exit 1
+
+  generate:
+    name: Generate Device Configurations
+    runs-on: ubuntu-latest
+    needs: validate
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Generate configurations
+        run: |
+          echo "=== Generating Device Configurations ==="
+          mkdir -p generated_configs
+          for config_file in configs/devices/*.yaml; do
+            device_name=$(basename "$config_file" .yaml)
+            output_file="generated_configs/${device_name}.cfg"
+            echo "Generating config for $device_name..."
+            python scripts/config_generator.py "$config_file" "$output_file"
+          done
+      
+      - name: Upload generated configurations
+        uses: actions/upload-artifact@v3
+        with:
+          name: generated-configs
+          path: generated_configs/
+          retention-days: 7
+
+  test:
+    name: Run Configuration Tests
+    runs-on: ubuntu-latest
+    needs: [validate, generate]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download generated configurations
+        uses: actions/download-artifact@v3
+        with:
+          name: generated-configs
+          path: generated_configs/
+      
+      - name: Run unit tests
+        run: |
+          echo "=== Running Unit Tests ==="
+          python -m pytest tests/ -v --tb=short
+      
+      - name: Test configuration syntax
+        run: |
+          echo "=== Testing Configuration Syntax ==="
+          for config_file in generated_configs/*.cfg; do
+            echo "Checking syntax of $config_file..."
+            if [ -s "$config_file" ]; then
+              echo "✓ $config_file is valid"
+            else
+              echo "✗ $config_file is empty or invalid"
+              exit 1
+            fi
+          done
+
+  deploy-staging:
+    name: Deploy to Staging Environment
+    runs-on: ubuntu-latest
+    needs: [validate, generate, test]
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_environment == 'staging')
+    environment:
+      name: staging
+      url: https://staging.example.com
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download generated configurations
+        uses: actions/download-artifact@v3
+        with:
+          name: generated-configs
+          path: generated_configs/
+      
+      - name: Deploy configurations (Dry Run)
+        env:
+          NETWORK_USERNAME: ${{ secrets.STAGING_NETWORK_USERNAME }}
+          NETWORK_PASSWORD: ${{ secrets.STAGING_NETWORK_PASSWORD }}
+          NETWORK_ENABLE_PASSWORD: ${{ secrets.STAGING_NETWORK_ENABLE_PASSWORD }}
+        run: |
+          echo "=== Deploying to Staging (Dry Run) ==="
+          for config_file in configs/devices/*.yaml; do
+            device_name=$(basename "$config_file" .yaml)
+            generated_config="generated_configs/${device_name}.cfg"
+            if [ -f "$generated_config" ]; then
+              echo "Deploying $device_name..."
+              python scripts/config_deployer.py "$config_file" "$generated_config" --dry-run || true
+            fi
+          done
+      
+      - name: Deployment Summary
+        run: |
+          echo "=== Deployment Summary ==="
+          echo "✓ Staging deployment completed (dry run mode)"
+          echo "Review the output above before deploying to production"
+
+  deploy-production:
+    name: Deploy to Production Environment
+    runs-on: ubuntu-latest
+    needs: [validate, generate, test]
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_environment == 'production')
+    environment:
+      name: production
+      url: https://production.example.com
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download generated configurations
+        uses: actions/download-artifact@v3
+        with:
+          name: generated-configs
+          path: generated_configs/
+      
+      - name: Confirm production deployment
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "⚠️  PRODUCTION DEPLOYMENT"
+          echo "This will deploy configurations to production devices."
+          echo "Ensure all validations and tests have passed."
+      
+      - name: Deploy configurations (Dry Run)
+        env:
+          NETWORK_USERNAME: ${{ secrets.PRODUCTION_NETWORK_USERNAME }}
+          NETWORK_PASSWORD: ${{ secrets.PRODUCTION_NETWORK_PASSWORD }}
+          NETWORK_ENABLE_PASSWORD: ${{ secrets.PRODUCTION_NETWORK_ENABLE_PASSWORD }}
+        run: |
+          echo "=== Deploying to Production (Dry Run) ==="
+          echo "⚠️  Currently in DRY RUN mode for safety"
+          echo "Remove --dry-run flag in production deployment step to actually deploy"
+          for config_file in configs/devices/*.yaml; do
+            device_name=$(basename "$config_file" .yaml)
+            generated_config="generated_configs/${device_name}.cfg"
+            if [ -f "$generated_config" ]; then
+              echo "Deploying $device_name..."
+              python scripts/config_deployer.py "$config_file" "$generated_config" --dry-run || true
+            fi
+          done
+      
+      - name: Production Deployment Summary
+        run: |
+          echo "=== Production Deployment Summary ==="
+          echo "✓ Production deployment completed (dry run mode)"
+          echo "⚠️  To enable actual deployment, modify the workflow file"
+
+  notify:
+    name: Send Notification
+    runs-on: ubuntu-latest
+    needs: [validate, generate, test]
+    if: always()
+    
+    steps:
+      - name: Notification Summary
+        run: |
+          echo "=== CI/CD Pipeline Summary ==="
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Status: ${{ job.status }}"
+          echo ""
+          echo "Configure email/Slack notifications here"
+

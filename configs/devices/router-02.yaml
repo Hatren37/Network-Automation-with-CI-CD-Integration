@@ -1,0 +1,51 @@
+device:
+  hostname: router-02
+  device_type: cisco_ios
+  ip_address: 192.168.1.2
+  credentials:
+    username: admin
+    password: ${DEVICE_PASSWORD}
+  
+interfaces:
+  - name: GigabitEthernet0/0
+    description: "Uplink to Core"
+    ip_address: 192.168.1.2
+    subnet_mask: 255.255.255.0
+    status: up
+  
+  - name: GigabitEthernet0/1
+    description: "LAN Interface"
+    ip_address: 10.0.2.1
+    subnet_mask: 255.255.255.0
+    status: up
+
+routing:
+  ospf:
+    enabled: true
+    process_id: 1
+    networks:
+      - network: 10.0.2.0
+        wildcard: 0.0.0.255
+        area: 0
+      - network: 192.168.1.0
+        wildcard: 0.0.0.255
+        area: 0
+
+security:
+  access_lists:
+    - name: "ACL-100"
+      type: extended
+      rules:
+        - action: permit
+          protocol: tcp
+          source: 10.0.2.0
+          source_wildcard: 0.0.0.255
+          destination: any
+          destination_port: 80
+        - action: permit
+          protocol: tcp
+          source: 10.0.2.0
+          source_wildcard: 0.0.0.255
+          destination: any
+          destination_port: 443
+
