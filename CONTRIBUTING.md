@@ -7,8 +7,8 @@ Thank you for your interest in contributing to this project! This document provi
 ### 1. Fork and Clone
 
 ```bash
-git clone <your-fork-url>
-cd network-automation-cicd
+git clone https://github.com/Hatren37/Network-Automation-with-CI-CD-Integration.git
+cd /Network-Automation-with-CI-CD-Integration
 ```
 
 ### 2. Create a Branch
