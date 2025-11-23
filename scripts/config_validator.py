@@ -70,6 +70,12 @@ class ConfigValidator:
         for idx, interface in enumerate(interfaces):
             if not interface.get('name'):
                 self.errors.append(f"Interface {idx}: name is required")
+
+            if not interface.get('description'):
+                self.errors.append(f"Interface {interface.get('name', idx)}: description is required")
+
+            if not interface.get('status'):
+                self.errors.append(f"Interface {interface.get('name', idx)}: status is required")
             
             if 'ip_address' in interface:
                 ip = interface['ip_address']
@@ -111,15 +117,20 @@ class ConfigValidator:
             if not acl.get('name'):
                 self.errors.append("ACL name is required")
             
-            if not acl.get('type') in ['standard', 'extended']:
+            if acl.get('type') not in ['standard', 'extended']:
                 self.errors.append(f"ACL {acl.get('name')}: Type must be 'standard' or 'extended'")
             
             for rule in acl.get('rules', []):
                 if rule.get('action') not in ['permit', 'deny']:
                     self.errors.append(f"ACL {acl.get('name')}: Rule action must be 'permit' or 'deny'")
-                
-                if rule.get('protocol') not in ['tcp', 'udp', 'ip', 'icmp']:
+
+                if not rule.get('protocol'):
+                    self.errors.append(f"ACL {acl.get('name')}: Rule protocol is required")
+                elif rule.get('protocol') not in ['tcp', 'udp', 'ip', 'icmp']:
                     self.warnings.append(f"ACL {acl.get('name')}: Uncommon protocol {rule.get('protocol')}")
+
+                if not rule.get('source'):
+                    self.errors.append(f"ACL {acl.get('name')}: Rule source is required")
     
     def validate_all(self):
         """Run all validation checks"""

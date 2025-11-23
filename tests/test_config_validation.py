@@ -118,6 +118,108 @@ class TestConfigValidation(unittest.TestCase):
         finally:
             os.unlink(config_file)
 
+    def test_interface_without_description(self):
+        """Test validation fails when interface is missing description"""
+        config = {
+            'device': {
+                'hostname': 'test-router',
+                'ip_address': '192.168.1.1'
+            },
+            'interfaces': [
+                {
+                    'name': 'GigabitEthernet0/0',
+                    'ip_address': '10.0.0.1',
+                    'subnet_mask': '255.255.255.0',
+                    'status': 'up'
+                }
+            ]
+        }
+        
+        config_file = self.create_temp_config(config)
+        try:
+            validator = ConfigValidator(config_file)
+            validator.validate_all()
+            self.assertFalse(validator.is_valid(), "Interface without description should fail")
+            self.assertTrue(any('description' in error.lower() for error in validator.errors))
+        finally:
+            os.unlink(config_file)
+
+    def test_interface_without_status(self):
+        """Test validation fails when interface is missing status"""
+        config = {
+            'device': {
+                'hostname': 'test-router',
+                'ip_address': '192.168.1.1'
+            },
+            'interfaces': [
+                {
+                    'name': 'GigabitEthernet0/0',
+                    'description': 'Test Interface',
+                    'ip_address': '10.0.0.1',
+                    'subnet_mask': '255.255.255.0'
+                }
+            ]
+        }
+        
+        config_file = self.create_temp_config(config)
+        try:
+            validator = ConfigValidator(config_file)
+            validator.validate_all()
+            self.assertFalse(validator.is_valid(), "Interface without status should fail")
+            self.assertTrue(any('status' in error.lower() for error in validator.errors))
+        finally:
+            os.unlink(config_file)
+
+    def test_acl_rule_without_protocol(self):
+        """Test validation fails when ACL rule is missing protocol"""
+        config = {
+            'device': {'hostname': 'test-router', 'ip_address': '192.168.1.1'},
+            'security': {
+                'access_lists': [
+                    {
+                        'name': 'TEST-ACL',
+                        'type': 'extended',
+                        'rules': [
+                            {'action': 'permit', 'source': 'any', 'destination': 'any'}
+                        ]
+                    }
+                ]
+            }
+        }
+        config_file = self.create_temp_config(config)
+        try:
+            validator = ConfigValidator(config_file)
+            validator.validate_all()
+            self.assertFalse(validator.is_valid(), "ACL rule without protocol should fail")
+            self.assertTrue(any('protocol' in error for error in validator.errors))
+        finally:
+            os.unlink(config_file)
+
+    def test_acl_rule_without_source(self):
+        """Test validation fails when ACL rule is missing source"""
+        config = {
+            'device': {'hostname': 'test-router', 'ip_address': '192.168.1.1'},
+            'security': {
+                'access_lists': [
+                    {
+                        'name': 'TEST-ACL',
+                        'type': 'extended',
+                        'rules': [
+                            {'action': 'permit', 'protocol': 'tcp', 'destination': 'any'}
+                        ]
+                    }
+                ]
+            }
+        }
+        config_file = self.create_temp_config(config)
+        try:
+            validator = ConfigValidator(config_file)
+            validator.validate_all()
+            self.assertFalse(validator.is_valid(), "ACL rule without source should fail")
+            self.assertTrue(any('source' in error for error in validator.errors))
+        finally:
+            os.unlink(config_file)
+
 
 if __name__ == '__main__':
     unittest.main()

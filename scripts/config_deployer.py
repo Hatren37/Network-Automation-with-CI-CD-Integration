@@ -43,29 +43,38 @@ class ConfigDeployer:
     
     def connect_to_device(self):
         """Establish connection to network device"""
-        device_info = self.config['device']
+        device_info = self.config.get('device', {})
         
-        # Get credentials from environment variables
-        username = os.getenv('NETWORK_USERNAME', device_info['credentials']['username'])
-        password = os.getenv('NETWORK_PASSWORD', device_info['credentials']['password'])
+        # Get credentials from environment variables or config
+        username = os.getenv('NETWORK_USERNAME', device_info.get('credentials', {}).get('username'))
+        password = os.getenv('NETWORK_PASSWORD', device_info.get('credentials', {}).get('password'))
+
+        # Substitute environment variables in password
+        if password and '${' in password:
+            password = os.path.expandvars(password)
         
         device_params = {
-            'device_type': device_info['device_type'],
-            'host': device_info['ip_address'],
+            'device_type': device_info.get('device_type', 'cisco_ios'),
+            'host': device_info.get('ip_address'),
             'username': username,
             'password': password,
             'secret': os.getenv('NETWORK_ENABLE_PASSWORD', ''),
         }
+
+        if not device_params['host']:
+            print("✗ Device IP address not found in configuration.")
+            sys.exit(1)
         
         try:
             connection = ConnectHandler(**device_params)
-            print(f"✓ Connected to {device_info['hostname']} ({device_info['ip_address']})")
+            hostname = device_info.get('hostname', device_params['host'])
+            print(f"✓ Connected to {hostname} ({device_params['host']})")
             return connection
         except NetmikoTimeoutException:
-            print(f"✗ Connection timeout to {device_info['ip_address']}")
+            print(f"✗ Connection timeout to {device_params['host']}")
             sys.exit(1)
         except NetmikoAuthenticationException:
-            print(f"✗ Authentication failed for {device_info['ip_address']}")
+            print(f"✗ Authentication failed for {device_params['host']}")
             sys.exit(1)
         except Exception as e:
             print(f"✗ Connection error: {e}")

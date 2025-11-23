@@ -31,21 +31,27 @@ class ConfigGenerator:
     
     def generate_hostname(self):
         """Generate hostname configuration"""
-        hostname = self.config['device']['hostname']
+        hostname = self.config.get('device', {}).get('hostname', 'default-hostname')
         return f"hostname {hostname}\n"
     
     def generate_interfaces(self):
         """Generate interface configurations"""
         commands = []
         for interface in self.config.get('interfaces', []):
-            name = interface['name']
+            name = interface.get('name')
+            if not name:
+                continue  # Skip interface if name is missing
             commands.append(f"interface {name}")
-            commands.append(f" description {interface['description']}")
-            if interface['status'] == 'up':
+            description = interface.get('description', f'Interface {name}')
+            commands.append(f" description {description}")
+            
+            status = interface.get('status', 'down')
+            if status == 'up':
                 commands.append(" no shutdown")
             else:
                 commands.append(" shutdown")
-            if 'ip_address' in interface:
+
+            if 'ip_address' in interface and 'subnet_mask' in interface:
                 ip = interface['ip_address']
                 mask = interface['subnet_mask']
                 commands.append(f" ip address {ip} {mask}")
@@ -58,13 +64,16 @@ class ConfigGenerator:
         ospf_config = self.config.get('routing', {}).get('ospf', {})
         
         if ospf_config.get('enabled', False):
-            process_id = ospf_config['process_id']
+            process_id = ospf_config.get('process_id')
+            if not process_id:
+                return "" # Cannot configure OSPF without a process ID
             commands.append(f"router ospf {process_id}")
             for network in ospf_config.get('networks', []):
-                net = network['network']
-                wildcard = network['wildcard']
-                area = network['area']
-                commands.append(f" network {net} {wildcard} area {area}")
+                net = network.get('network')
+                wildcard = network.get('wildcard')
+                area = network.get('area')
+                if net and wildcard and area is not None:
+                    commands.append(f" network {net} {wildcard} area {area}")
             commands.append("!")
         
         return "\n".join(commands) + "\n" if commands else ""
@@ -75,30 +84,37 @@ class ConfigGenerator:
         acls = self.config.get('security', {}).get('access_lists', [])
         
         for acl in acls:
-            acl_name = acl['name']
-            acl_type = acl['type']
+            acl_name = acl.get('name')
+            acl_type = acl.get('type')
+            if not acl_name or not acl_type:
+                continue # Skip ACL if name or type is missing
+
             for rule in acl.get('rules', []):
-                action = rule['action']
-                protocol = rule['protocol']
-                source = rule['source']
+                action = rule.get('action')
+                protocol = rule.get('protocol')
+                source = rule.get('source')
+                
+                if not all([action, protocol, source]):
+                    continue # Skip rule with missing required fields
+
                 src_wildcard = rule.get('source_wildcard', '0.0.0.0')
                 destination = rule.get('destination', 'any')
-                dst_port = rule.get('destination_port', '')
+                dst_port = rule.get('destination_port')
                 
                 if acl_type == 'extended':
+                    cmd_parts = [f"access-list {acl_name}", action, protocol, source, src_wildcard, destination]
                     if dst_port:
-                        cmd = f"access-list {acl_name} {action} {protocol} {source} {src_wildcard} {destination} eq {dst_port}"
-                    else:
-                        cmd = f"access-list {acl_name} {action} {protocol} {source} {src_wildcard} {destination}"
-                    commands.append(cmd)
+                        cmd_parts.append(f"eq {dst_port}")
+                    commands.append(" ".join(cmd_parts))
         
         return "\n".join(commands) + "\n" if commands else ""
     
     def generate_full_config(self):
         """Generate complete device configuration"""
         config_lines = []
+        hostname = self.config.get('device', {}).get('hostname', 'Unknown-Device')
         config_lines.append("! Generated Configuration")
-        config_lines.append("! Device: " + self.config['device']['hostname'])
+        config_lines.append(f"! Device: {hostname}")
         config_lines.append("!")
         config_lines.append(self.generate_hostname())
         config_lines.append(self.generate_interfaces())
